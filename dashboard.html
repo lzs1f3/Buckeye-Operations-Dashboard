@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Operational Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #d0d0d0;
+    --text: #1a1a1a;
+    --muted: #666666;
+    --primary: #1B3A6B;
+    --accent: #C41C3A;
+    --highlight: #ffffff;
+    --font-mono: 'Courier New', Courier, monospace;
+    --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--surface);
+    border-bottom: 3px solid var(--primary);
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .logo-text {
+    font-size: 22px;
+    font-weight: 900;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .cutoff-pill {
+    background: #fff3e6;
+    border: 1px solid var(--primary);
+    border-radius: 10px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary);
+    font-family: var(--font-mono);
+    letter-spacing: 0.5px;
+  }
+
+  .live-dot {
+    width: 11px;
+    height: 11px;
+    display: inline-block;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.8s infinite;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
+
+  .date-pill {
+    background: var(--bg);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 6px 16px;
+    font-size: 18px;
+    font-weight: bold;
+    font-family: var(--font-mono);
+    color: var(--text);
+  }
+
+  /* ── KPI Bar ── */
+  .kpi-bar {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .kpi {
+    background: var(--surface);
+    padding: 16px 20px 14px;
+    border-top: 5px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .kpi-label {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .kpi-value {
+    font-size: 38px;
+    font-weight: 900;
+    font-family: var(--font-mono);
+    line-height: 1.1;
+    margin-top: 4px;
+  }
+
+  .kpi-sub {
+    font-size: 13px;
+    font-weight: 800;
+    margin-top: 6px;
+    font-family: var(--font-mono);
+    border-top: 1px dashed var(--border);
+    padding-top: 5px;
+    letter-spacing: 0.2px;
+  }
+
+  /* ── Chart Area ── */
+  .charts-col {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 1px;
+    background: var(--border);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .chart-panel {
+    background: var(--bg);
+    padding: 14px 24px 12px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .chart-title {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  .chart-wrap {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+  }
+</style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="logo-text">Service Level Operational Dashboard</div>
+    <div class="header-right">
+      <div class="cutoff-pill" id="cutoffLabel">Data through: --:--</div>
+      <span class="live-dot"></span>
+      <div class="date-pill" id="clockDisplay">--:--:--</div>
+    </div>
+  </div>
+
+  <div class="kpi-bar">
+    <div class="kpi" style="border-top-color:var(--primary)">
+      <div class="kpi-label">Overall SL%</div>
+      <div class="kpi-value" id="kpi-sl" style="color:var(--primary)">0.00%</div>
+    </div>
+    <div class="kpi" style="border-top-color:var(--accent)">
+      <div class="kpi-label">ABN%</div>
+      <div class="kpi-value" id="kpi-abn" style="color:var(--accent)">0.00%</div>
+    </div>
+    <div class="kpi" style="border-top-color:var(--primary)">
+      <div class="kpi-label">Forecast Vol</div>
+      <div class="kpi-value" id="kpi-fc" style="color:var(--primary)">0</div>
+    </div>
+    <div class="kpi" style="border-top-color:var(--accent)">
+      <div class="kpi-label">Offered Vol</div>
+      <div class="kpi-value" id="kpi-offered" style="color:var(--accent)">0</div>
+      <div class="kpi-sub" id="kpi-otf" style="color:var(--accent)">OTF%: 0%</div>
+    </div>
+    <div class="kpi" style="border-top-color:var(--primary)">
+      <div class="kpi-label">Handled Vol</div>
+      <div class="kpi-value" id="kpi-handled" style="color:var(--primary)">0</div>
+      <div class="kpi-sub" id="kpi-htf" style="color:var(--primary)">HTF%: 0%</div>
+    </div>
+    <div class="kpi" style="border-top-color:var(--accent)">
+      <div class="kpi-label">Average AHT</div>
+      <div class="kpi-value" id="kpi-aht" style="color:var(--accent)">0:00:00</div>
+    </div>
+  </div>
+
+  <div class="charts-col">
+    <div class="chart-panel">
+      <div class="chart-title">Volume — Offered vs Forecast (through cutoff)</div>
+      <div class="chart-wrap"><canvas id="chartVolume"></canvas></div>
+    </div>
+    <div class="chart-panel">
+      <div class="chart-title">Service Level % vs 70% Target</div>
+      <div class="chart-wrap"><canvas id="chartSL"></canvas></div>
+    </div>
+  </div>
+
+<script>
+const CSV_URL = "https://dl.dropboxusercontent.com/scl/fi/p6md2099ibgnwnhy671ze/Live_Dashboard_Data.csv?rlkey=7nm3j6b3f6qmob3v36ua301pv&st=6cjdxxh4&dl=1";
+let volChart, slChart;
+
+// Column mapping: A-P (0-15 indices)
+const HEADERS = {
+  Type: 0,
+  Month: 1,
+  Week: 2,
+  Date: 3,
+  Interval: 4,
+  FORECAST: 5,
+  Offered: 6,
+  CALLS_IN_SL: 7,
+  Handled: 8,
+  Q_Callback: 9,
+  ABANDONED: 10,
+  SPEED_OF_ANSWER: 11,
+  AFTER_CALL_WORK_TIME: 12,
+  TALK_TIME: 13,
+  HOLD_TIME: 14,
+  HANDLE_TIME: 15
+};
+
+function formatExcelTime(val) {
+  const num = parseFloat(val);
+  if (isNaN(num)) return val;
+  const totalMins = Math.round(num * 24 * 60);
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  return `${h}:${String(m).padStart(2,'0')}`;
+}
+
+function formatSecondsToHMS(totalSeconds) {
+  if (isNaN(totalSeconds) || totalSeconds <= 0) return "0:00:00";
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+// Get dynamic cutoff: Current EST time - 1 hour, locked to :30 minutes
+function getDynamicCutoff() {
+  const now = new Date();
+  
+  // Get EST time properly using Intl API
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  
+  const parts = formatter.formatToParts(now);
+  let estHour = parseInt(parts.find(p => p.type === 'hour').value);
+  
+  // Subtract 1 hour
+  let h = estHour - 1;
+  if (h < 0) h += 24;
+  
+  return {
+    hour: h,
+    minute: 30,
+    display: `${h % 12 || 12}:30 ${h >= 12 ? 'PM' : 'AM'} EST`
+  };
+}
+
+function splitCSVRow(row) {
+  let result = [];
+  let insideQuote = false;
+  let entry = "";
+  for (let char of row) {
+    if (char === '"') {
+      insideQuote = !insideQuote;
+    } else if (char === ',' && !insideQuote) {
+      result.push(entry);
+      entry = "";
+    } else {
+      entry += char;
+    }
+  }
+  result.push(entry);
+  return result;
+}
+
+function parseNumeric(val) {
+  if (!val) return 0;
+  let clean = val.trim().replace(/^"|"$/g, '').replace(/,/g, '');
+  let num = parseFloat(clean);
+  return isNaN(num) ? 0 : num;
+}
+
+function timeStringToMinutes(timeStr) {
+  if (!timeStr || !timeStr.includes(':')) return -1;
+  const parts = timeStr.split(':');
+  const h = parseInt(parts[0]) || 0;
+  const m = parseInt(parts[1]) || 0;
+  return h * 60 + m;
+}
+
+async function fetchData() {
+  try {
+    const res = await fetch(CSV_URL + '&t=' + Date.now());
+    const text = await res.text();
+
+    const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+    const allRows = [];
+
+    // Parse all eClerx rows
+    for (let i = 0; i < lines.length; i++) {
+      const v = splitCSVRow(lines[i]);
+      if (v.length < 16) continue;
+
+      const clean = s => (s || '').replace(/"/g,'').trim();
+      const rowType = clean(v[HEADERS.Type]);
+      
+      // Skip header row
+      if (rowType === "Type" || rowType === "") continue;
+      
+      // Include eClerx and eClerx MS Biz rows
+      if (rowType !== "eClerx" && rowType !== "eClerx MS Biz") continue;
+
+      let rawTime = clean(v[HEADERS.Interval]);
+      let formattedTime = rawTime.includes(':') ? rawTime : formatExcelTime(rawTime);
+      
+      const rowMinutes = timeStringToMinutes(formattedTime);
+      if (rowMinutes < 0) continue;
+
+      const rowData = {
+        type:      rowType,
+        time:      formattedTime,
+        minutes:   rowMinutes,
+        forecast:  parseNumeric(v[HEADERS.FORECAST]),
+        offered:   parseNumeric(v[HEADERS.Offered]),
+        winSL:     parseNumeric(v[HEADERS.CALLS_IN_SL]),
+        handled:   parseNumeric(v[HEADERS.Handled]),
+        abandoned: parseNumeric(v[HEADERS.ABANDONED]),
+        acwTime:   parseNumeric(v[HEADERS.AFTER_CALL_WORK_TIME]),
+        talkTime:  parseNumeric(v[HEADERS.TALK_TIME]),
+        holdTime:  parseNumeric(v[HEADERS.HOLD_TIME]),
+      };
+
+      allRows.push(rowData);
+    }
+
+    // Get cutoff based on current EST time - 1 hour, locked to :30
+    const cutoff = getDynamicCutoff();
+    const cutoffMinutes = cutoff.hour * 60 + cutoff.minute;
+
+    // Filter rows by cutoff
+    const filteredRows = allRows.filter(row => row.minutes <= cutoffMinutes);
+
+    // Group by interval time and combine both vendors
+    const combinedByInterval = {};
+    filteredRows.forEach(row => {
+      if (!combinedByInterval[row.time]) {
+        combinedByInterval[row.time] = {
+          time: row.time,
+          minutes: row.minutes,
+          forecast: 0, offered: 0, winSL: 0, handled: 0,
+          abandoned: 0, acwTime: 0, talkTime: 0, holdTime: 0,
+        };
+      }
+      combinedByInterval[row.time].forecast += row.forecast;
+      combinedByInterval[row.time].offered += row.offered;
+      combinedByInterval[row.time].winSL += row.winSL;
+      combinedByInterval[row.time].handled += row.handled;
+      combinedByInterval[row.time].abandoned += row.abandoned;
+      combinedByInterval[row.time].acwTime += row.acwTime;
+      combinedByInterval[row.time].talkTime += row.talkTime;
+      combinedByInterval[row.time].holdTime += row.holdTime;
+    });
+
+    // Convert to array, maintaining time order
+    const combinedArray = Object.values(combinedByInterval).sort((a, b) => a.minutes - b.minutes);
+
+    // Display cutoff time in header
+    document.getElementById('cutoffLabel').textContent = `Data through: ${cutoff.display}`;
+
+    if (combinedArray.length > 0) {
+      renderDashboard(combinedArray);
+    }
+  } catch (e) {
+    console.error("Feed error:", e);
+  }
+}
+
+function renderDashboard(intervalData) {
+  let totalForecast = 0, totalOffered = 0, totalHandled = 0, totalSLCalls = 0;
+  let totalAbandoned = 0, totalTalkTime = 0, totalHoldTime = 0, totalACWTime = 0;
+
+  const processedData = intervalData.map(row => {
+    totalForecast += row.forecast;
+    totalOffered += row.offered;
+    totalHandled += row.handled;
+    totalSLCalls += row.winSL;
+    totalAbandoned += row.abandoned;
+    totalTalkTime += row.talkTime;
+    totalHoldTime += row.holdTime;
+    totalACWTime += row.acwTime;
+
+    let intervalSL = row.offered > 0 ? (row.winSL / row.offered) * 100 : 100;
+
+    return {
+      interval: row.time,
+      forecast: row.forecast,
+      offered: row.offered,
+      sl: intervalSL
+    };
+  });
+
+  const overallSL = totalOffered > 0 ? ((totalSLCalls / totalOffered) * 100).toFixed(2) : "100.00";
+  const overallABN = totalOffered > 0 ? ((totalAbandoned / totalOffered) * 100).toFixed(2) : "0.00";
+  const otfPct = totalForecast > 0 ? Math.round((totalOffered / totalForecast) * 100) : 0;
+  const htfPct = totalForecast > 0 ? Math.round((totalHandled / totalForecast) * 100) : 0;
+
+  let avgAHTSeconds = 0;
+  if (totalHandled > 0) {
+    const totalTimeSum = totalTalkTime + totalHoldTime + totalACWTime;
+    const ahtDays = totalTimeSum / totalHandled / 1440;
+    avgAHTSeconds = ahtDays * 86400; 
+  }
+
+  document.getElementById('kpi-sl').textContent      = overallSL + "%";
+  document.getElementById('kpi-abn').textContent     = overallABN + "%";
+  document.getElementById('kpi-fc').textContent      = Math.round(totalForecast).toLocaleString();
+  document.getElementById('kpi-offered').textContent = Math.round(totalOffered).toLocaleString();
+  document.getElementById('kpi-handled').textContent = Math.round(totalHandled).toLocaleString();
+  document.getElementById('kpi-aht').textContent     = formatSecondsToHMS(avgAHTSeconds);
+  document.getElementById('kpi-otf').textContent     = "OTF%: " + otfPct + "%";
+  document.getElementById('kpi-htf').textContent     = "HTF%: " + htfPct + "%";
+
+  updateCharts(processedData);
+}
+
+function updateCharts(processedData) {
+  Chart.defaults.font.size   = 12;
+  Chart.defaults.font.weight = 'bold';
+
+  const labels   = processedData.map(d => d.interval);
+  const forecast = processedData.map(d => d.forecast);
+  const offered  = processedData.map(d => d.offered);
+  const slData   = processedData.map(d => parseFloat(d.sl.toFixed(2)));
+  const target70 = Array(processedData.length).fill(70);
+
+  const volCfg = {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Forecast', data: forecast, backgroundColor: 'rgba(27, 58, 107, 0.15)', borderColor: '#1B3A6B', borderWidth: 2 },
+        { label: 'Offered', data: offered, backgroundColor: 'rgba(196, 28, 58, 0.65)', borderColor: '#C41C3A', borderWidth: 2 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { boxWidth: 14 } } },
+      scales: {
+        x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 20 } },
+        y: { beginAtZero: true }
+      }
+    }
+  };
+
+  const slCfg = {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'SL%', data: slData, borderColor: '#C41C3A', backgroundColor: 'rgba(196, 28, 58, 0.12)', borderWidth: 3, fill: true, tension: 0.1, pointRadius: 2, order: 1 },
+        { label: '70% Target', data: target70, borderColor: '#1B3A6B', borderWidth: 2, borderDash: [8, 6], pointRadius: 0, fill: false, order: 2 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { boxWidth: 14 } } },
+      scales: {
+        x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 20 } },
+        y: { min: 0, max: 100 }
+      }
+    }
+  };
+
+  if (!volChart) {
+    volChart = new Chart(document.getElementById('chartVolume'), volCfg);
+    slChart  = new Chart(document.getElementById('chartSL'),     slCfg);
+  } else {
+    volChart.data.labels           = labels;
+    volChart.data.datasets[0].data = forecast;
+    volChart.data.datasets[1].data = offered;
+    slChart.data.labels            = labels;
+    slChart.data.datasets[0].data  = slData;
+    slChart.data.datasets[1].data  = target70;
+    volChart.update();
+    slChart.update();
+  }
+}
+
+// Update clock every second
+setInterval(() => {
+  document.getElementById('clockDisplay').textContent = new Date().toLocaleTimeString();
+}, 1000);
+
+// NEW SCHEDULER LOGIC: Refresh exactly at the 35th minute of every hour
+function scheduleNextUpdate() {
+  const now = new Date();
+  // Target xx:35:00
+  let target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 35, 0, 0);
+  
+  let msUntilNext = target.getTime() - now.getTime();
+
+  // If it's already past the 35th minute, set the target for the next hour
+  if (msUntilNext <= 0) {
+    msUntilNext += 60 * 60 * 1000; 
+  }
+
+  // Trigger fetchData when the time arrives, then schedule the next one
+  setTimeout(() => {
+    fetchData();
+    scheduleNextUpdate(); 
+  }, msUntilNext);
+}
+
+// Kick it off!
+fetchData();
+scheduleNextUpdate();
+
+</script>
+</body>
+</html>
