@@ -207,7 +207,11 @@
     </div>
     <div class="kpi" style="border-top-color:var(--accent)">
       <div class="kpi-label">Average AHT</div>
-      <div class="kpi-value" id="kpi-aht" style="color:var(--accent)">0:00:00</div>
+      <div style="display: flex; align-items: baseline; gap: 8px;">
+        <div class="kpi-value" id="kpi-aht" style="color:var(--accent)">0:00:00</div>
+        <div id="aht-trend" style="font-size: 18px; font-weight: bold;">—</div>
+      </div>
+      <div class="kpi-sub" id="kpi-aht-status" style="color:var(--accent)">Status: —</div>
     </div>
   </div>
 
@@ -220,30 +224,38 @@
       <div class="chart-title">Service Level % vs 70% Target</div>
       <div class="chart-wrap"><canvas id="chartSL"></canvas></div>
     </div>
+    <div class="chart-panel">
+      <div class="chart-title">Average Handle Time per Interval (target: 10 min)</div>
+      <div class="chart-wrap"><canvas id="chartAHT"></canvas></div>
+    </div>
   </div>
 
 <script>
-const CSV_URL = "https://dl.dropboxusercontent.com/scl/fi/p6md2099ibgnwnhy671ze/Live_Dashboard_Data.csv?rlkey=7nm3j6b3f6qmob3v36ua301pv&st=6cjdxxh4&raw=1";
-let volChart, slChart;
+const CSV_URL = "https://dl.dropboxusercontent.com/scl/fi/p6md2099ibgnwnhy671ze/Live_Dashboard_Data.csv?rlkey=7nm3j6b3f6qmob3v36ua301pv&st=6cjdxxh4&dl=1";
+let volChart, slChart, ahtChart;
+
+// AHT history tracking
+let ahtHistory = [];
+const MAX_HISTORY = 10; // Keep last 10 readings
 
 // Column mapping: A-P (0-15 indices)
 const HEADERS = {
-  Type: 0,
-  Month: 1,
-  Week: 2,
-  Date: 3,
-  Interval: 4,
-  FORECAST: 5,
-  Offered: 6,
-  CALLS_IN_SL: 7,
-  Handled: 8,
-  Q_Callback: 9,
-  ABANDONED: 10,
-  SPEED_OF_ANSWER: 11,
-  AFTER_CALL_WORK_TIME: 12,
-  TALK_TIME: 13,
-  HOLD_TIME: 14,
-  HANDLE_TIME: 15
+  Type: 0,                   // A
+  Month: 1,                  // B
+  Week: 2,                   // C
+  Date: 3,                   // D
+  Interval: 4,               // E
+  FORECAST: 5,               // F
+  Offered: 6,                // G
+  CALLS_IN_SL: 7,            // H
+  Handled: 8,                // I
+  Q_Callback: 9,             // J
+  ABANDONED: 10,             // K
+  SPEED_OF_ANSWER: 11,       // L
+  AFTER_CALL_WORK_TIME: 12,  // M
+  TALK_TIME: 13,             // N
+  HOLD_TIME: 14,             // O
+  HANDLE_TIME: 15            // P
 };
 
 function formatExcelTime(val) {
@@ -261,6 +273,50 @@ function formatSecondsToHMS(totalSeconds) {
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = Math.floor(totalSeconds % 60);
   return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function updateAHTTrend(currentAHTSeconds) {
+  // Add current reading to history
+  ahtHistory.push(currentAHTSeconds);
+  if (ahtHistory.length > MAX_HISTORY) {
+    ahtHistory.shift();
+  }
+
+  // Calculate trend
+  if (ahtHistory.length < 2) {
+    document.getElementById('aht-trend').textContent = '—';
+    document.getElementById('kpi-aht-status').textContent = 'Status: —';
+    document.getElementById('aht-trend').style.color = 'var(--muted)';
+    return;
+  }
+
+  const previousAHT = ahtHistory[ahtHistory.length - 2];
+  const delta = currentAHTSeconds - previousAHT;
+  const tenMinutes = 600; // 10 minutes in seconds
+
+  // Determine trend indicator
+  let trendIcon = '—';
+  let trendColor = 'var(--muted)';
+  let statusText = 'Status: —';
+
+  if (delta < -5) { // Improving by more than 5 seconds
+    trendIcon = '↓';
+    trendColor = currentAHTSeconds < tenMinutes ? '#22C55E' : 'var(--primary)'; // Green if below 10min, else blue
+    statusText = currentAHTSeconds < tenMinutes ? 'Status: ✓ Good' : 'Status: ↓ Improving';
+  } else if (delta > 5) { // Worsening by more than 5 seconds
+    trendIcon = '↑';
+    trendColor = '#EF4444'; // Red for worsening
+    statusText = 'Status: ↑ Worsening';
+  } else { // Stable
+    trendIcon = '→';
+    trendColor = 'var(--muted)';
+    statusText = 'Status: Stable';
+  }
+
+  document.getElementById('aht-trend').textContent = trendIcon;
+  document.getElementById('aht-trend').style.color = trendColor;
+  document.getElementById('kpi-aht-status').textContent = statusText;
+  document.getElementById('kpi-aht-status').style.color = trendColor;
 }
 
 // Get dynamic cutoff: Current EST time - 1 hour, locked to :30 minutes
@@ -328,6 +384,7 @@ async function fetchData() {
     const text = await res.text();
 
     const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+    
     const allRows = [];
 
     // Parse all eClerx rows
@@ -336,6 +393,7 @@ async function fetchData() {
       if (v.length < 16) continue;
 
       const clean = s => (s || '').replace(/"/g,'').trim();
+      
       const rowType = clean(v[HEADERS.Type]);
       
       // Skip header row
@@ -354,14 +412,14 @@ async function fetchData() {
         type:      rowType,
         time:      formattedTime,
         minutes:   rowMinutes,
-        forecast:  parseNumeric(v[HEADERS.FORECAST]),
-        offered:   parseNumeric(v[HEADERS.Offered]),
-        winSL:     parseNumeric(v[HEADERS.CALLS_IN_SL]),
-        handled:   parseNumeric(v[HEADERS.Handled]),
-        abandoned: parseNumeric(v[HEADERS.ABANDONED]),
-        acwTime:   parseNumeric(v[HEADERS.AFTER_CALL_WORK_TIME]),
-        talkTime:  parseNumeric(v[HEADERS.TALK_TIME]),
-        holdTime:  parseNumeric(v[HEADERS.HOLD_TIME]),
+        forecast:  parseNumeric(v[HEADERS.FORECAST]),     // F
+        offered:   parseNumeric(v[HEADERS.Offered]),      // G
+        winSL:     parseNumeric(v[HEADERS.CALLS_IN_SL]),  // H
+        handled:   parseNumeric(v[HEADERS.Handled]),      // I
+        abandoned: parseNumeric(v[HEADERS.ABANDONED]),    // K
+        acwTime:   parseNumeric(v[HEADERS.AFTER_CALL_WORK_TIME]), // M
+        talkTime:  parseNumeric(v[HEADERS.TALK_TIME]),    // N
+        holdTime:  parseNumeric(v[HEADERS.HOLD_TIME]),    // O
       };
 
       allRows.push(rowData);
@@ -381,8 +439,14 @@ async function fetchData() {
         combinedByInterval[row.time] = {
           time: row.time,
           minutes: row.minutes,
-          forecast: 0, offered: 0, winSL: 0, handled: 0,
-          abandoned: 0, acwTime: 0, talkTime: 0, holdTime: 0,
+          forecast: 0,
+          offered: 0,
+          winSL: 0,
+          handled: 0,
+          abandoned: 0,
+          acwTime: 0,
+          talkTime: 0,
+          holdTime: 0,
         };
       }
       combinedByInterval[row.time].forecast += row.forecast;
@@ -410,8 +474,14 @@ async function fetchData() {
 }
 
 function renderDashboard(intervalData) {
-  let totalForecast = 0, totalOffered = 0, totalHandled = 0, totalSLCalls = 0;
-  let totalAbandoned = 0, totalTalkTime = 0, totalHoldTime = 0, totalACWTime = 0;
+  let totalForecast = 0;
+  let totalOffered = 0;
+  let totalHandled = 0;
+  let totalSLCalls = 0;
+  let totalAbandoned = 0;
+  let totalTalkTime = 0;
+  let totalHoldTime = 0;
+  let totalACWTime = 0;
 
   const processedData = intervalData.map(row => {
     totalForecast += row.forecast;
@@ -423,28 +493,48 @@ function renderDashboard(intervalData) {
     totalHoldTime += row.holdTime;
     totalACWTime += row.acwTime;
 
+    // Service Level % = H / G (CALLS_IN_SL / Offered)
     let intervalSL = row.offered > 0 ? (row.winSL / row.offered) * 100 : 100;
+
+    // AHT for this interval = (Talk + Hold + ACW) / Handled / 1440 → seconds
+    let intervalAHT = 0;
+    if (row.handled > 0) {
+      const intervalTimeSum = row.talkTime + row.holdTime + row.acwTime;
+      const ahtDays = intervalTimeSum / row.handled / 1440;
+      intervalAHT = ahtDays * 86400; // Convert to seconds
+    }
 
     return {
       interval: row.time,
       forecast: row.forecast,
       offered: row.offered,
-      sl: intervalSL
+      sl: intervalSL,
+      aht: intervalAHT
     };
   });
 
+  // Calculate KPIs using correct formulas
+  // Service Level % = H / G (total calls in SL / total offered)
   const overallSL = totalOffered > 0 ? ((totalSLCalls / totalOffered) * 100).toFixed(2) : "100.00";
+  
+  // Abandon % = K / G (abandoned / offered)
   const overallABN = totalOffered > 0 ? ((totalAbandoned / totalOffered) * 100).toFixed(2) : "0.00";
+  
+  // OTF % = G / F (offered / forecast)
   const otfPct = totalForecast > 0 ? Math.round((totalOffered / totalForecast) * 100) : 0;
+  
+  // HTF % = I / F (handled / forecast)
   const htfPct = totalForecast > 0 ? Math.round((totalHandled / totalForecast) * 100) : 0;
 
+  // Average AHT = (Talk[N] + Hold[O] + ACW[M]) / Handled / 1440 → convert to seconds
   let avgAHTSeconds = 0;
   if (totalHandled > 0) {
     const totalTimeSum = totalTalkTime + totalHoldTime + totalACWTime;
     const ahtDays = totalTimeSum / totalHandled / 1440;
-    avgAHTSeconds = ahtDays * 86400; 
+    avgAHTSeconds = ahtDays * 86400; // Convert days to seconds
   }
 
+  // Update KPI displays
   document.getElementById('kpi-sl').textContent      = overallSL + "%";
   document.getElementById('kpi-abn').textContent     = overallABN + "%";
   document.getElementById('kpi-fc').textContent      = Math.round(totalForecast).toLocaleString();
@@ -453,6 +543,9 @@ function renderDashboard(intervalData) {
   document.getElementById('kpi-aht').textContent     = formatSecondsToHMS(avgAHTSeconds);
   document.getElementById('kpi-otf').textContent     = "OTF%: " + otfPct + "%";
   document.getElementById('kpi-htf').textContent     = "HTF%: " + htfPct + "%";
+
+  // Update AHT trend
+  updateAHTTrend(avgAHTSeconds);
 
   updateCharts(processedData);
 }
@@ -465,19 +558,34 @@ function updateCharts(processedData) {
   const forecast = processedData.map(d => d.forecast);
   const offered  = processedData.map(d => d.offered);
   const slData   = processedData.map(d => parseFloat(d.sl.toFixed(2)));
+  const ahtData  = processedData.map(d => parseFloat(d.aht.toFixed(2)));
   const target70 = Array(processedData.length).fill(70);
+  const target600 = Array(processedData.length).fill(600); // 10 minutes = 600 seconds
 
   const volCfg = {
     type: 'bar',
     data: {
       labels,
       datasets: [
-        { label: 'Forecast', data: forecast, backgroundColor: 'rgba(27, 58, 107, 0.15)', borderColor: '#1B3A6B', borderWidth: 2 },
-        { label: 'Offered', data: offered, backgroundColor: 'rgba(196, 28, 58, 0.65)', borderColor: '#C41C3A', borderWidth: 2 }
+        {
+          label: 'Forecast',
+          data: forecast,
+          backgroundColor: 'rgba(27, 58, 107, 0.15)',
+          borderColor: '#1B3A6B',
+          borderWidth: 2,
+        },
+        {
+          label: 'Offered',
+          data: offered,
+          backgroundColor: 'rgba(196, 28, 58, 0.65)',
+          borderColor: '#C41C3A',
+          borderWidth: 2,
+        }
       ]
     },
     options: {
-      responsive: true, maintainAspectRatio: false,
+      responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { labels: { boxWidth: 14 } } },
       scales: {
         x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 20 } },
@@ -491,12 +599,38 @@ function updateCharts(processedData) {
     data: {
       labels,
       datasets: [
-        { label: 'SL%', data: slData, borderColor: '#C41C3A', backgroundColor: 'rgba(196, 28, 58, 0.12)', borderWidth: 3, fill: true, tension: 0.1, pointRadius: 2, order: 1 },
-        { label: '70% Target', data: target70, borderColor: '#1B3A6B', borderWidth: 2, borderDash: [8, 6], pointRadius: 0, fill: false, order: 2 }
+        {
+          label: 'SL%',
+          data: slData,
+          borderColor: '#C41C3A',
+          backgroundColor: 'rgba(196, 28, 58, 0.12)',
+          borderWidth: 3,
+          fill: true,
+          tension: 0.1,
+          spanGaps: false,
+          pointRadius: 2,
+          pointBackgroundColor: slData.map(val => val >= 70 ? '#22C55E' : '#EF4444'),
+          segment: {
+            borderColor: ctx => slData[ctx.p0DataIndex] >= 70 ? '#22C55E' : '#EF4444',
+            backgroundColor: ctx => slData[ctx.p0DataIndex] >= 70 ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)'
+          },
+          order: 1,
+        },
+        {
+          label: '70% Target',
+          data: target70,
+          borderColor: '#1B3A6B',
+          borderWidth: 2,
+          borderDash: [8, 6],
+          pointRadius: 0,
+          fill: false,
+          order: 2,
+        }
       ]
     },
     options: {
-      responsive: true, maintainAspectRatio: false,
+      responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { labels: { boxWidth: 14 } } },
       scales: {
         x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 20 } },
@@ -505,9 +639,60 @@ function updateCharts(processedData) {
     }
   };
 
+  const ahtCfg = {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'AHT (seconds)',
+          data: ahtData,
+          borderColor: '#C41C3A',
+          backgroundColor: 'rgba(196, 28, 58, 0.12)',
+          borderWidth: 3,
+          fill: true,
+          tension: 0.1,
+          spanGaps: false,
+          pointRadius: 2,
+          pointBackgroundColor: ahtData.map(val => val <= 600 ? '#22C55E' : '#EF4444'),
+          segment: {
+            borderColor: ctx => ahtData[ctx.p0DataIndex] <= 600 ? '#22C55E' : '#EF4444',
+            backgroundColor: ctx => ahtData[ctx.p0DataIndex] <= 600 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)'
+          },
+          yAxisID: 'y',
+          order: 1,
+        },
+        {
+          label: '10 Min Target',
+          data: target600,
+          borderColor: '#1B3A6B',
+          borderWidth: 2,
+          borderDash: [8, 6],
+          pointRadius: 0,
+          fill: false,
+          yAxisID: 'y',
+          order: 2,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { boxWidth: 14 } } },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'Seconds' }
+        },
+        x: { ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 20 } }
+      }
+    }
+  };
+
   if (!volChart) {
     volChart = new Chart(document.getElementById('chartVolume'), volCfg);
     slChart  = new Chart(document.getElementById('chartSL'),     slCfg);
+    ahtChart = new Chart(document.getElementById('chartAHT'),    ahtCfg);
   } else {
     volChart.data.labels           = labels;
     volChart.data.datasets[0].data = forecast;
@@ -515,8 +700,12 @@ function updateCharts(processedData) {
     slChart.data.labels            = labels;
     slChart.data.datasets[0].data  = slData;
     slChart.data.datasets[1].data  = target70;
+    ahtChart.data.labels           = labels;
+    ahtChart.data.datasets[0].data = ahtData;
+    ahtChart.data.datasets[1].data = target600;
     volChart.update();
     slChart.update();
+    ahtChart.update();
   }
 }
 
@@ -525,30 +714,9 @@ setInterval(() => {
   document.getElementById('clockDisplay').textContent = new Date().toLocaleTimeString();
 }, 1000);
 
-// NEW SCHEDULER LOGIC: Refresh exactly at the 35th minute of every hour
-function scheduleNextUpdate() {
-  const now = new Date();
-  // Target xx:35:00
-  let target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 35, 0, 0);
-  
-  let msUntilNext = target.getTime() - now.getTime();
-
-  // If it's already past the 35th minute, set the target for the next hour
-  if (msUntilNext <= 0) {
-    msUntilNext += 60 * 60 * 1000; 
-  }
-
-  // Trigger fetchData when the time arrives, then schedule the next one
-  setTimeout(() => {
-    fetchData();
-    scheduleNextUpdate(); 
-  }, msUntilNext);
-}
-
-// Kick it off!
+// Refresh data every 60 seconds
+setInterval(fetchData, 60000);
 fetchData();
-scheduleNextUpdate();
-
 </script>
 </body>
 </html>
