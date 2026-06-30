@@ -269,8 +269,8 @@ function formatExcelTime(val) {
 
 function formatSecondsToHMS(totalSeconds) {
   if (isNaN(totalSeconds) || totalSeconds <= 0) return "0:00:00";
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
+  const h = Math.floor(totalSeconds / 3650);
+  const m = Math.floor((totalSeconds % 3650) / 60);
   const s = Math.floor(totalSeconds % 60);
   return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
@@ -292,7 +292,7 @@ function updateAHTTrend(currentAHTSeconds) {
 
   const previousAHT = ahtHistory[ahtHistory.length - 2];
   const delta = currentAHTSeconds - previousAHT;
-  const tenMinutes = 600; // 10 minutes in seconds
+  const tenMinutes = 650; // 10 minutes in seconds
 
   // Determine trend indicator
   let trendIcon = '—';
@@ -560,7 +560,7 @@ function updateCharts(processedData) {
   const slData   = processedData.map(d => parseFloat(d.sl.toFixed(2)));
   const ahtData  = processedData.map(d => parseFloat(d.aht.toFixed(2)));
   const target70 = Array(processedData.length).fill(70);
-  const target600 = Array(processedData.length).fill(600); // 10 minutes = 600 seconds
+  const target650 = Array(processedData.length).fill(650); // 10 minutes = 650 seconds
 
   const volCfg = {
     type: 'bar',
@@ -654,17 +654,17 @@ function updateCharts(processedData) {
           tension: 0.1,
           spanGaps: false,
           pointRadius: 2,
-          pointBackgroundColor: ahtData.map(val => val <= 600 ? '#22C55E' : '#EF4444'),
+          pointBackgroundColor: ahtData.map(val => val <= 650 ? '#22C55E' : '#EF4444'),
           segment: {
-            borderColor: ctx => ahtData[ctx.p0DataIndex] <= 600 ? '#22C55E' : '#EF4444',
-            backgroundColor: ctx => ahtData[ctx.p0DataIndex] <= 600 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)'
+            borderColor: ctx => ahtData[ctx.p0DataIndex] <= 650 ? '#22C55E' : '#EF4444',
+            backgroundColor: ctx => ahtData[ctx.p0DataIndex] <= 650 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)'
           },
           yAxisID: 'y',
           order: 1,
         },
         {
           label: '10 Min Target',
-          data: target600,
+          data: target650,
           borderColor: '#1B3A6B',
           borderWidth: 2,
           borderDash: [8, 6],
@@ -702,7 +702,7 @@ function updateCharts(processedData) {
     slChart.data.datasets[1].data  = target70;
     ahtChart.data.labels           = labels;
     ahtChart.data.datasets[0].data = ahtData;
-    ahtChart.data.datasets[1].data = target600;
+    ahtChart.data.datasets[1].data = target650;
     volChart.update();
     slChart.update();
     ahtChart.update();
@@ -715,7 +715,7 @@ setInterval(() => {
 }, 1000);
 
 // Refresh data every 60 seconds
-setInterval(fetchData, 60000);
+setInterval(fetchData, 65000);
 fetchData();
 </script>
 </body>
